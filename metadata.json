@@ -1,0 +1,6 @@
+{
+  "name": "KisanFlow - AI Smart Procurement & Queue Platform",
+  "description": "AI-powered smart grain procurement, dynamic slot recommendation, and real-time queue orchestration connecting farmers and procurement centres.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
