@@ -1,17 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Sparkles, MapPin, Clock, CheckCircle2, Calendar, ChevronRight, AlertCircle, Info, X, Scale
+import {
+  Sparkles, MapPin, Clock, CheckCircle2, Calendar, ChevronRight, AlertCircle, Info, X, Scale, Loader2
 } from 'lucide-react';
 import { useKisanFlow } from '../../context/KisanFlowContext';
-import { supabase } from '../../utils/supabase'; 
+import { supabase } from '../../utils/supabase';
+import { getAISlotRecommendation } from '../../utils/aiRecommendation';
 
-// Database Submission Logic
+// ---------------------------------------------------------------------------
+// AI recommendation types
+// ---------------------------------------------------------------------------
+interface Recommendation {
+  recommendedCentreId: string;
+  recommendedTime: string;
+  expectedWaitMin: number;
+  loadScore: number;
+  reasoning: string;
+  source?: 'ai' | 'fallback';
+}
+
+// Database Submission Logic (unchanged)
 async function submitToken(
   supabaseClient: any,
   formData: {
     centre_id: string; farmer_id: string; farmer_name: string; mobile: string;
     crop_type: string; variety: string; estimated_quantity: number; total_amount: number;
-    village: string; slot_date: string; slot_time: string; 
+    village: string; slot_date: string; slot_time: string;
   }
 ) {
   let checkQuery = supabaseClient
@@ -54,11 +67,11 @@ export const SlotBookingWizard: React.FC = () => {
   const [cropType, setCropType] = useState('Wheat (Sharbati)');
   const [variety, setVariety] = useState('Sharbati Gold');
   const [quantity, setQuantity] = useState(32);
-  
+
   const [isCustomMode, setIsCustomMode] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
-  
+
   const todayISO = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
   const [manualDate, setManualDate] = useState(todayISO);
   const [manualTime, setManualTime] = useState('');
@@ -67,9 +80,49 @@ export const SlotBookingWizard: React.FC = () => {
   const [dynamicTime, setDynamicTime] = useState('09:00 AM');
   const [isSlotLoading, setIsSlotLoading] = useState(true);
 
-  const recommendedCentre = centres && centres.length > 0 
-    ? [...centres].sort((a, b) => (a.waitTimeMin || 0) - (b.waitTimeMin || 0))[0] 
+  // ---------------------------------------------------------------------
+  // AI recommendation state — fetched manually via button, not automatically.
+  // AI only decides WHICH CENTRE to recommend. The exact time slot is still
+  // computed by the existing capacity-aware calculateNextSlot() logic below,
+  // so overbooking protection is never bypassed by the AI's guess.
+  // ---------------------------------------------------------------------
+  const [aiRecommendation, setAiRecommendation] = useState<Recommendation | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [lastFetchedInputs, setLastFetchedInputs] = useState<{ cropType: string; quantity: number } | null>(null);
+
+  const handleGetAiRecommendation = async () => {
+    setIsAiLoading(true);
+    try {
+      const rec = await getAISlotRecommendation({
+        farmer,
+        centres,
+        cropType,
+        quantity,
+      });
+      if (rec) setAiRecommendation(rec as Recommendation);
+      setLastFetchedInputs({ cropType, quantity });
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const recommendationIsStale =
+    lastFetchedInputs !== null &&
+    (lastFetchedInputs.cropType !== cropType || lastFetchedInputs.quantity !== quantity);
+
+  const hasAiRecommendation = aiRecommendation !== null && !recommendationIsStale;
+  const isAiSourced = aiRecommendation?.source === 'ai';
+
+  // Default/fallback centre pick — same heuristic the app already used
+  // (lowest wait time). Used whenever the AI hasn't been asked yet, or its
+  // pick is stale relative to the current crop/quantity.
+  const fallbackCentre = centres && centres.length > 0
+    ? [...centres].sort((a, b) => (a.waitTimeMin || 0) - (b.waitTimeMin || 0))[0]
     : centres[0];
+
+  const recommendedCentre = hasAiRecommendation
+    ? (centres.find(c => c.id === aiRecommendation!.recommendedCentreId) || fallbackCentre)
+    : fallbackCentre;
 
   const getMsp = (crop: string) => {
     const c = (crop || '').toLowerCase();
@@ -80,14 +133,16 @@ export const SlotBookingWizard: React.FC = () => {
     return 2183;
   };
 
-  // AI Recommendation Logic (Untouched)
+  // Dynamic capacity-aware slot calculation (unchanged) — always runs for
+  // whichever centre is currently recommended (AI-picked or fallback), so
+  // the actual booking time never exceeds a centre's real capacity.
   useEffect(() => {
     function calculateNextSlot() {
       if (!recommendedCentre) return;
       setIsSlotLoading(true);
-      
+
       try {
-        const activeBookings = bookings.filter(b => 
+        const activeBookings = bookings.filter(b =>
           b.centreId === recommendedCentre.id &&
           b.status !== 'COMPLETED' && b.status !== 'NO_SHOW' && b.status !== 'CANCELLED'
         );
@@ -141,11 +196,11 @@ export const SlotBookingWizard: React.FC = () => {
         setIsSlotLoading(false);
       }
     }
-    
-    calculateNextSlot();
-  }, [recommendedCentre?.id, recommendedCentre?.activeCounters, quantity, bookings]); 
 
-  // 🔥 THE FIX: Dynamically checks the capacity of the SPECIFIC building you click on
+    calculateNextSlot();
+  }, [recommendedCentre?.id, recommendedCentre?.activeCounters, quantity, bookings]);
+
+  // Dynamically checks the capacity of the SPECIFIC building you click on (unchanged)
   const getAvailableManualTimes = (targetCentreId: string) => {
     const times = [];
     const now = new Date();
@@ -156,7 +211,6 @@ export const SlotBookingWizard: React.FC = () => {
     const targetCentre = centres.find(c => c.id === targetCentreId) || centres[0];
     const maxHourlyCapacity = (targetCentre.activeCounters || 3) * 120;
 
-    // Calculate the live load for THIS specific center on the selected date
     const localHourlyLoads: Record<number, number> = {};
     bookings.forEach(b => {
       const isSameDate = b.bookingDate === manualDate || (isToday && b.bookingDate === 'Today');
@@ -172,14 +226,13 @@ export const SlotBookingWizard: React.FC = () => {
     });
 
     for (let h = 9; h <= 17; h++) {
-      // 🔒 LOCK: Physically hides dropdown slots that exceed THIS building's limits
       if (((localHourlyLoads[h] || 0) + quantity) > maxHourlyCapacity) {
         continue;
       }
 
       for (let m = 0; m < 60; m += 30) {
-        if (h === 17 && m > 0) continue; 
-        if (isToday && (h < currentHour || (h === currentHour && m <= currentMin))) continue; 
+        if (h === 17 && m > 0) continue;
+        if (isToday && (h < currentHour || (h === currentHour && m <= currentMin))) continue;
 
         const meridian = h >= 12 ? 'PM' : 'AM';
         const displayHour = h > 12 ? h - 12 : (h === 0 ? 12 : h);
@@ -282,21 +335,35 @@ export const SlotBookingWizard: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-emerald-500 text-slate-950 flex items-center justify-center font-bold shadow-md">
-              <Sparkles className="w-4 h-4" />
+              {isAiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             </div>
             <div>
               <span className="text-[11px] font-extrabold text-emerald-300 uppercase tracking-wider block">
                 AI SMART SLOT RECOMMENDATION
               </span>
               <span className="text-xs text-slate-300 font-medium">
-                Procurement Load Score: <span className="text-emerald-400 font-bold">Optimal / Low Congestion</span>
+                Procurement Load Score:{' '}
+                <span className="text-emerald-400 font-bold">
+                  {isAiLoading
+                    ? '...'
+                    : hasAiRecommendation
+                      ? `${aiRecommendation!.loadScore} ${aiRecommendation!.loadScore <= 40 ? '(Optimal / Low Congestion)' : '(Moderate)'}`
+                      : 'Optimal / Low Congestion'}
+                </span>
               </span>
             </div>
           </div>
           <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-full font-bold">
-            RECOMMENDED
+            {hasAiRecommendation ? (isAiSourced ? 'AI RECOMMENDED' : 'RECOMMENDED') : 'RECOMMENDED'}
           </span>
         </div>
+
+        {recommendationIsStale && (
+          <div className="mt-3 flex items-center gap-2 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>Crop or quantity changed — tap "Refresh AI Recommendation" to re-check the best centre.</span>
+          </div>
+        )}
 
         <div className="mt-4 p-4 rounded-2xl bg-slate-900/90 border border-emerald-500/40 space-y-3">
           <div className="flex items-start justify-between">
@@ -335,19 +402,51 @@ export const SlotBookingWizard: React.FC = () => {
           <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400 space-y-1">
             <span className="text-emerald-400 font-semibold block flex items-center gap-1">
               <Info className="w-3 h-3" />
-              Dynamic Slot Calculation
+              {hasAiRecommendation ? 'Why this centre?' : 'Dynamic Slot Calculation'}
+              {hasAiRecommendation && (
+                <span
+                  className={`ml-auto text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                    isAiSourced ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700/60 text-slate-400'
+                  }`}
+                >
+                  {isAiSourced ? 'AI-POWERED' : 'BASIC (OFFLINE)'}
+                </span>
+              )}
             </span>
             <p className="text-[11px] text-slate-300 leading-snug">
-              KisanFlow allocates precise time blocks based on crop volume. Larger harvests automatically reserve wider operating windows to prevent bottlenecking.
+              {hasAiRecommendation
+                ? aiRecommendation!.reasoning
+                : 'KisanFlow allocates precise time blocks based on crop volume. Larger harvests automatically reserve wider operating windows to prevent bottlenecking. Tap "Get AI Recommendation" for a reasoning-based centre pick.'}
             </p>
           </div>
+
+          {/* AI trigger — only fires the Gemini call when the user asks for it */}
+          {(!hasAiRecommendation || recommendationIsStale) && (
+            <button
+              onClick={handleGetAiRecommendation}
+              disabled={isAiLoading}
+              className="w-full bg-slate-800 hover:bg-slate-700 border border-emerald-500/40 text-emerald-300 font-heading font-bold text-sm py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-98 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isAiLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Analyzing centres...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>{recommendationIsStale ? 'Refresh AI Recommendation' : 'Get AI Recommendation'}</span>
+                </>
+              )}
+            </button>
+          )}
 
           <button
             onClick={() => handleBook(recommendedCentre.id, dynamicTime, false, dynamicDate)}
             disabled={isBooking || isSlotLoading}
             className={`w-full font-heading font-extrabold text-sm py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all ${
               isBooking || isSlotLoading
-                ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
+                ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
                 : 'bg-gradient-to-r from-emerald-500 via-emerald-400 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-emerald-950/50 active:scale-98 cursor-pointer'
             }`}
           >
@@ -373,15 +472,15 @@ export const SlotBookingWizard: React.FC = () => {
 
         <div className="space-y-2.5">
           {centres.map(centre => {
-            const isRec = centre.id === recommendedCentre.id; 
+            const isRec = centre.id === recommendedCentre.id;
             const isHigh = centre.congestion === 'HIGH';
 
             return (
               <div
                 key={centre.id}
                 className={`p-3.5 rounded-2xl border transition-all ${
-                  isRec 
-                    ? 'bg-emerald-950/20 border-emerald-500/50' 
+                  isRec
+                    ? 'bg-emerald-950/20 border-emerald-500/50'
                     : isHigh
                       ? 'bg-slate-900/80 border-rose-900/40 opacity-90'
                       : 'bg-slate-800/40 border-slate-700/50'
@@ -424,26 +523,25 @@ export const SlotBookingWizard: React.FC = () => {
                     <div className="flex gap-2">
                       <div className="flex-1">
                         <label className="text-[10px] text-slate-400 block mb-1">Select Date</label>
-                        <input 
+                        <input
                           type="date"
                           min={todayISO}
-                          value={manualDate} 
+                          value={manualDate}
                           onChange={(e) => {
                             setManualDate(e.target.value);
-                            setManualTime(''); 
+                            setManualTime('');
                           }}
                           className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                         />
                       </div>
                       <div className="flex-1">
                         <label className="text-[10px] text-slate-400 block mb-1">Select Time</label>
-                        <select 
-                          value={manualTime} 
+                        <select
+                          value={manualTime}
                           onChange={(e) => setManualTime(e.target.value)}
                           className="w-full bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                         >
                           <option value="" disabled>Select an open slot</option>
-                          {/* 🔥 THE FIX: Passes the exact building ID to check its specific load */}
                           {getAvailableManualTimes(centre.id).length > 0 ? (
                             getAvailableManualTimes(centre.id).map(time => (
                               <option key={time} value={time}>{time}</option>
