@@ -19,6 +19,7 @@ import {
 import { useKisanFlow } from '../../context/KisanFlowContext';
 import { SlotRecoveryBanner } from './SlotRecoveryBanner';
 import { GrievanceModal } from './GrievanceModal';
+import { FloatingAgentButton } from './FloatingAgentButton';
 
 export const FarmerHome: React.FC = () => {
   const { farmer, bookings, centres, setActiveTabFarmer, t, setIvrModalOpen } = useKisanFlow();
@@ -33,6 +34,7 @@ export const FarmerHome: React.FC = () => {
     <div className="space-y-4">
       {/* Slot Recovery Banner (USP #4 Dynamic No-Show Recovery) */}
       <SlotRecoveryBanner />
+      <FloatingAgentButton />
 
       {/* Farmer Profile Header Banner */}
       <div className="bg-gradient-to-r from-emerald-800 via-emerald-700 to-teal-800 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden">
