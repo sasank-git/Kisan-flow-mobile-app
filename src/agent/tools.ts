@@ -22,10 +22,6 @@ export interface AgentToolContext {
   }) => SlotBooking;
 }
 
-// In-memory draft store. Keyed by draftId. Cleared on page reload — fine,
-// since a draft that outlives a session should be re-proposed anyway.
-const pendingDrafts: Record<string, BookingDraft> = {};
-
 export interface BookingDraft {
   draftId: string;
   centreId: string;
@@ -36,6 +32,18 @@ export interface BookingDraft {
   date: string;
   time: string;
   status: 'PENDING_USER_CONFIRMATION';
+}
+
+// In-memory draft store. Keyed by draftId. Cleared on page reload — fine,
+// since a draft that outlives a session should be re-proposed anyway.
+const pendingDrafts: Record<string, BookingDraft> = {};
+
+// NEW: lets a draft proposed OUTSIDE this file (e.g. by the voice/pipecat
+// bot, which keeps its own separate Python-side draft dict) get registered
+// into this same store, so confirmBooking() below can find it regardless
+// of whether the draft came from text or voice.
+export function registerExternalDraft(draft: BookingDraft) {
+  pendingDrafts[draft.draftId] = draft;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,24 +94,31 @@ export async function recommendCentre(
   return { ...rec, centreName: centre?.name ?? rec.recommendedCentreId };
 }
 
-const RAG_ENDPOINT = import.meta.env.VITE_RAG_ENDPOINT || ''; // e.g. https://your-rag-service.onrender.com/rag
+// Points at the standalone FastAPI RAG server (src/agent/rag/rag_api.py),
+// NOT the Pipecat voice server. Run it separately:
+//   uv run uvicorn rag_api:app --reload --port 8000
+const RAG_API_URL = import.meta.env.VITE_RAG_API_URL || 'http://localhost:8000/rag';
 
 export async function ragQuery(args: { question: string }) {
-  if (!RAG_ENDPOINT) {
-    return { error: 'Knowledge base is not configured yet.' };
-  }
   try {
-    const res = await fetch(RAG_ENDPOINT, {
+    const res = await fetch(RAG_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: args.question, top_k: 4 }),
+      body: JSON.stringify({ query: args.question, top_k: 3 }),
     });
-    if (!res.ok) throw new Error(`RAG endpoint returned ${res.status}`);
-    const data = await res.json();
-    if (!data.answer_context) {
-      return { context: '', note: 'No relevant information found in the knowledge base.' };
+    if (!res.ok) throw new Error(`RAG server returned ${res.status}`);
+
+    const data: { chunks: { text: string; source?: string }[] } = await res.json();
+
+    if (!data.chunks || data.chunks.length === 0) {
+      return { context: null, note: 'No relevant information found in the knowledge base.' };
     }
-    return { context: data.answer_context, sources: data.sources };
+
+    // Return as plain context text — Gemini uses this to write the actual
+    // answer in its next turn. This function never generates prose itself.
+    return {
+      context: data.chunks.map((c, i) => `[${i + 1}] ${c.text}`).join('\n\n'),
+    };
   } catch (err: any) {
     return { error: `Could not reach knowledge base: ${err.message}` };
   }

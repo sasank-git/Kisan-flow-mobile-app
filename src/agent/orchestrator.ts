@@ -42,7 +42,7 @@ export async function runAgentTurn(
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const result = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash-lite',
       contents,
       config: {
         systemInstruction: AGENT_SYSTEM_PROMPT,
@@ -107,8 +107,15 @@ export async function runAgentTurn(
 // ---------------------------------------------------------------------------
 // Convenience wrapper for a UI-facing chat hook: keeps Gemini history
 // internally, exposes a simple send(text) -> AgentChatMessage API.
+//
+// Pass `initialHistory` (loaded from localStorage) to resume a session with
+// real memory intact, not just replayed UI bubbles. Use `session.getHistory()`
+// after each send() to persist it back.
 // ---------------------------------------------------------------------------
-export function createAgentSession(ctx: AgentToolContext, initialHistory: GeminiContent[] = []) {
+export function createAgentSession(
+  ctx: AgentToolContext,
+  initialHistory: GeminiContent[] = []
+) {
   let history: GeminiContent[] = initialHistory;
 
   return {
@@ -117,14 +124,24 @@ export function createAgentSession(ctx: AgentToolContext, initialHistory: Gemini
       history = updatedHistory;
       return { role: 'agent', text: reply, draft };
     },
+
+    /** Call this when the user taps "Confirm" on a rendered draft card,
+     * without them having to type anything. */
     async confirmDraft(draftId: string): Promise<AgentChatMessage> {
       return this.send(`Confirm booking ${draftId}`);
     },
+
+    /** Serializable Gemini history — persist this (e.g. to localStorage)
+     * to survive reloads with real conversational memory, not just a
+     * replayed transcript. */
     getHistory(): GeminiContent[] {
       return history;
     },
+
     reset() {
       history = [];
     },
   };
 }
+
+export type { GeminiContent };

@@ -134,3 +134,54 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# ---------------------------------------------------------------------------
+# KisanFlow-specific additions below
+# ---------------------------------------------------------------------------
+
+# --- Vite build output (in case 'dist' above is ever scoped differently) ---
+dist-ssr/
+.vite/
+
+# --- Capacitor / Android — app developer's machine regenerates these -------
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/captures/
+android/*.iml
+android/.idea/
+ios/
+.capacitor/
+
+# --- Editor / OS -------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Python / AI backend (src/agent) — only needed on your machine ---------
+# for the voice (bot.py) and RAG (rag_api.py) servers. Not needed to build
+# or run the base app.
+src/agent/venv/
+**/__pycache__/
+*.pyc
+
+# Vector DB + generated RAG artifacts — regenerable from source docs via the
+# rag pipeline scripts, not hand-written source.
+src/agent/vector_db/
+src/agent/rag/chunks/
+src/agent/rag/cleaned_texts/
+src/agent/rag/doc_data/
+render_rag/
+
+# Separate Python env files, if bot.py / rag_api.py use their own .env
+src/agent/.env
+src/agent/rag/.env
+
+# --- Lockfile: keep ONE. You currently have both bun.lock and
+# package-lock.json in the tree — pick whichever your team standardizes on
+# and uncomment the other line below to stop tracking it.
+# bun.lock
+# package-lock.json

@@ -10,7 +10,7 @@ print(f"Loaded {len(all_chunks)} chunks")
 
 
 client = chromadb.PersistentClient(path='vector_db/')
-collection = client.get_or_create_collection(name='book_chunks')
+collection = client.get_or_create_collection(name='kisanflow_chunks')
 
 
 old_count = collection.count()
