@@ -34,17 +34,17 @@ export const FarmerAuth: React.FC<FarmerAuthProps> = ({ onSuccess }) => {
   const [errorMessage, setErrorMessage] = useState('');
 
   // New Farmer Registration form state
-  const [regName, setRegName] = useState('Rajesh Sharma');
+  const [regName, setRegName] = useState('Pradeep Jena');
   const [regMobile, setRegMobile] = useState('+91 98120 44921');
   const [regAadhaar, setRegAadhaar] = useState('XXXX-XXXX-7124');
-  const [regVillage, setRegVillage] = useState('Taraori');
-  const [regDistrict, setRegDistrict] = useState('Karnal');
+  const [regVillage, setRegVillage] = useState('Banki');
+  const [regDistrict, setRegDistrict] = useState('Cuttack');
   const [regLand, setRegLand] = useState(4.5);
 
   const handleSendOtp = (e: React.FormEvent) => {
     e.preventDefault();
     if (mobileNumber.length < 10) {
-      setErrorMessage('Please enter a valid 10-digit mobile number');
+      setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
     setErrorMessage('');
@@ -55,7 +55,7 @@ export const FarmerAuth: React.FC<FarmerAuthProps> = ({ onSuccess }) => {
     e.preventDefault();
     const entered = otpValue.join('');
     if (entered.length < 4) {
-      setErrorMessage('Please enter the 4-digit OTP');
+      setErrorMessage('Please enter the 4-digit OTP.');
       return;
     }
     try {
@@ -81,6 +81,45 @@ export const FarmerAuth: React.FC<FarmerAuthProps> = ({ onSuccess }) => {
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // --- NEW VALIDATION LOGIC ---
+    if (regName.trim().length < 3) {
+      setErrorMessage('Please enter a valid full name (min 3 characters).');
+      return;
+    }
+
+    const mobileDigits = regMobile.replace(/\D/g, ''); 
+    const isValidIndianMobile = /^[6-9]\d{9}$/.test(mobileDigits.slice(-10));
+    if (!isValidIndianMobile || mobileDigits.length < 10) {
+      setErrorMessage('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    // Govt ID Validation: Exactly 12 chars, no all-zeros
+    const cleanGovtId = regAadhaar.replace(/[-\s]/g, ''); // Strip spaces and hyphens
+    if (cleanGovtId.length !== 12) {
+      setErrorMessage('Govt ID must be exactly 12 characters.');
+      return;
+    }
+    if (/^0+$/.test(cleanGovtId)) {
+      setErrorMessage('Govt ID cannot be all zeros.');
+      return;
+    }
+
+    if (regVillage.trim().length < 2) {
+      setErrorMessage('Please enter a valid village name.');
+      return;
+    }
+
+    if (regLand <= 0) {
+      setErrorMessage('Please enter a valid land size greater than 0.');
+      return;
+    }
+
+    // Clear error if all validations pass
+    setErrorMessage('');
+    // ---------------------------
+
     const newProfile: FarmerProfile = {
       id: `KF-R${Math.floor(100000 + Math.random() * 900000)}`,
       name: regName,
@@ -89,7 +128,7 @@ export const FarmerAuth: React.FC<FarmerAuthProps> = ({ onSuccess }) => {
       village: regVillage,
       panchayat: 'Nilokheri',
       district: regDistrict,
-      state: 'Haryana',
+      state: 'Odisha',
       preferredLang: language,
       landSizeAcres: regLand,
       bankName: 'Punjab National Bank (DBT Verified)',
@@ -108,24 +147,17 @@ export const FarmerAuth: React.FC<FarmerAuthProps> = ({ onSuccess }) => {
 
   return (
     <div className="w-full max-w-sm mx-auto space-y-4 py-2 select-none">
-      {/* Top Welcome Card matching Screenshot 1 */}
+      {/* Top Welcome Card */}
       <div className="bg-gradient-to-b from-[#107048] via-[#0b5437] to-[#073c27] p-6 rounded-[28px] text-white text-center shadow-2xl relative overflow-hidden border border-emerald-500/20">
-        {/* Emblem Badge with Tractor Icon */}
         <div className="w-16 h-16 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 flex items-center justify-center mx-auto mb-3.5 shadow-inner">
           <Tractor className="w-8 h-8 text-emerald-200" />
         </div>
-
-        {/* Brand Title */}
         <h1 className="font-heading font-extrabold text-2xl text-white tracking-tight">
           KisanFlow
         </h1>
-
-        {/* Subtitle */}
         <p className="text-xs text-emerald-100/90 mt-1 max-w-[240px] mx-auto leading-relaxed">
           Smart Procurement & Dynamic Queue Management System
         </p>
-
-        {/* Language Selector Pill */}
         <div className="mt-3.5 inline-flex items-center gap-1.5 bg-black/25 backdrop-blur-md px-4 py-1.5 rounded-full border border-emerald-400/25 text-xs text-emerald-100 font-medium">
           <Languages className="w-3.5 h-3.5 text-emerald-300" />
           <select
@@ -141,9 +173,9 @@ export const FarmerAuth: React.FC<FarmerAuthProps> = ({ onSuccess }) => {
         </div>
       </div>
 
-      {/* Main Authentication Box matching Screenshot 1 */}
+      {/* Main Authentication Box */}
       <div className="bg-[#0c1322] border border-slate-800/80 rounded-[28px] p-6 shadow-2xl space-y-4">
-        {/* Segmented Tab Pill: Farmer Sign In vs New Registration */}
+        {/* Segmented Tab Pill */}
         <div className="flex bg-[#121c2e] p-1.5 rounded-2xl border border-slate-800/80 text-xs">
           <button
             type="button"
@@ -218,7 +250,6 @@ export const FarmerAuth: React.FC<FarmerAuthProps> = ({ onSuccess }) => {
         {/* STEP 2: Verify OTP */}
         {authMode === 'OTP' && (
           <form onSubmit={handleVerifyOtp} className="space-y-4">
-            {/* Auto-fill notification chip */}
             <div 
               onClick={() => setOtpValue(['4', '8', '2', '1'])}
               className="p-2.5 rounded-xl bg-amber-950/30 border border-amber-500/40 text-amber-200 text-xs flex items-center justify-between cursor-pointer hover:bg-amber-950/50 transition-colors"
@@ -237,8 +268,6 @@ export const FarmerAuth: React.FC<FarmerAuthProps> = ({ onSuccess }) => {
                 </label>
                 <span className="text-[10px] text-slate-400 font-mono">Sent to +91 {mobileNumber}</span>
               </div>
-
-              {/* 4 Digit Boxes */}
               <div className="flex justify-center gap-3">
                 {otpValue.map((digit, idx) => (
                   <input
@@ -248,7 +277,7 @@ export const FarmerAuth: React.FC<FarmerAuthProps> = ({ onSuccess }) => {
                     value={digit}
                     onChange={(e) => {
                       const nextVal = [...otpValue];
-                      nextVal[idx] = e.target.value;
+                      nextVal[idx] = e.target.value.replace(/\D/g, '').slice(0, 1);
                       setOtpValue(nextVal);
                     }}
                     className="w-12 h-12 text-center text-xl font-mono font-black bg-[#141e32] border-2 border-emerald-500/50 focus:border-emerald-400 rounded-xl text-white focus:outline-none shadow-sm"
@@ -372,7 +401,7 @@ export const FarmerAuth: React.FC<FarmerAuthProps> = ({ onSuccess }) => {
           className="w-full py-3 bg-[#162238] hover:bg-[#1b2b46] text-emerald-400 border border-slate-700/60 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-sm"
         >
           <Sparkles className="w-4 h-4 text-amber-400" />
-          <span>Instant Demo Login (Ramesh Kumar - Haryana)</span>
+          <span>Instant Demo Login (Ramesh Kumar - Odisha)</span>
         </button>
       </div>
 
